@@ -8,10 +8,10 @@ import { useRealtimeStt } from '@/hooks/useRealtimeStt';
 export default function RealtimePage() {
     const [meetingTitle, setMeetingTitle] = useState('새 회의');
     const [language, setLanguage] = useState('ko');
-    const [sttProvider, setSttProvider] = useState('deepgram');
+    const [sttProvider, setSttProvider] = useState('google');
     const [meetingId, setMeetingId] = useState<string | null>(null);
 
-    const { connected, segments, error, start, stop } = useRealtimeStt({
+    const { connected, segments, error, wsUrl, sampleRate, start, stop } = useRealtimeStt({
         backendUrl: 'ws://localhost:8000', // FastAPI 주소
     });
 
@@ -71,7 +71,9 @@ export default function RealtimePage() {
                                 value={sttProvider}
                                 onChange={(e) => setSttProvider(e.target.value)}
                             >
+                                <option value='google'>Google</option>
                                 <option value='deepgram'>Deepgram</option>
+                                <option value='speechmatics'>Speechmatics</option>
                                 <option value='assemblyai'>AssemblyAI</option>
                                 {/* <option value='openai'>OpenAI Realtime</option> */}
                             </select>
@@ -106,6 +108,15 @@ export default function RealtimePage() {
                                 {error}
                             </div>
                         )}
+
+                        <div className='mt-2 text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded-md p-2 space-y-1'>
+                            <div>
+                                WS URL:{' '}
+                                <span className='break-all'>{wsUrl ?? '연결되지 않음'}</span>
+                            </div>
+                            <div>Audio sample rate: {sampleRate ? `${sampleRate} Hz` : '-'}</div>
+                            <div>Segments received: {segments.length}</div>
+                        </div>
                     </div>
                 </div>
 

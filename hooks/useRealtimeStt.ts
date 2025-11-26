@@ -13,18 +13,40 @@ type TranscriptSegment = {
 
 type UseRealtimeSttOptions = {
     backendUrl?: string; // ws://localhost:8000 기본값
-    provider?: string; // assemblyai, deepgram 등
+    provider?: string; // google, speechmatics, assemblyai, deepgram 등
     language?: string; // ko, en, ...
 };
 
+// 간단한 다운샘플링(모노) - ScriptProcessor 콜백에서 바로 사용
+function downsampleTo16k(input: Float32Array, inputSampleRate: number) {
+    const targetRate = 16000;
+    if (inputSampleRate === targetRate) return input;
+    if (inputSampleRate < targetRate) {
+        // 업샘플링은 지원하지 않음
+        return input;
+    }
+
+    const ratio = inputSampleRate / targetRate;
+    const outputLength = Math.floor(input.length / ratio);
+    const result = new Float32Array(outputLength);
+
+    for (let i = 0; i < outputLength; i++) {
+        const sourceIndex = Math.floor(i * ratio);
+        result[i] = input[sourceIndex];
+    }
+    return result;
+}
+
 export function useRealtimeStt(options?: UseRealtimeSttOptions) {
     const backendUrl = options?.backendUrl ?? 'ws://localhost:8000';
-    const provider = options?.provider ?? 'assemblyai';
+    const provider = options?.provider ?? 'deepgram';
     const language = options?.language ?? 'ko';
 
     const [connected, setConnected] = useState(false);
     const [segments, setSegments] = useState<TranscriptSegment[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [wsUrl, setWsUrl] = useState<string | null>(null);
+    const [actualSampleRate, setActualSampleRate] = useState<number | null>(null);
 
     const wsRef = useRef<WebSocket | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -52,11 +74,14 @@ export function useRealtimeStt(options?: UseRealtimeSttOptions) {
 
         try {
             // 1) WebSocket 연결
-            const wsUrl = `${backendUrl}/ws/meetings/${meetingId}/realtime?provider=${finalProvider}&language=${finalLang}`;
-            const ws = new WebSocket(wsUrl);
+            const socketUrl = `${backendUrl}/ws/meetings/${meetingId}/realtime?provider=${finalProvider}&language=${finalLang}`;
+            setWsUrl(socketUrl);
+            const ws = new WebSocket(socketUrl);
+            console.log('[realtime] connecting to', socketUrl);
 
             ws.onopen = () => {
                 setConnected(true);
+                console.log('[realtime] websocket open');
             };
 
             ws.onerror = (ev) => {
@@ -70,6 +95,7 @@ export function useRealtimeStt(options?: UseRealtimeSttOptions) {
             };
 
             ws.onmessage = (event) => {
+                console.debug('[realtime] received message', event.data);
                 try {
                     const data = JSON.parse(event.data as string);
                     if (data.error) {
@@ -109,6 +135,8 @@ export function useRealtimeStt(options?: UseRealtimeSttOptions) {
                 sampleRate: 16000,
             });
             audioContextRef.current = audioContext;
+            setActualSampleRate(audioContext.sampleRate);
+            console.log('[realtime] AudioContext sampleRate', audioContext.sampleRate);
 
             const source = audioContext.createMediaStreamSource(stream);
 
@@ -122,7 +150,10 @@ export function useRealtimeStt(options?: UseRealtimeSttOptions) {
                 }
                 const inputBuffer = audioProcessingEvent.inputBuffer;
                 const channelData = inputBuffer.getChannelData(0); // Float32Array
-                const pcmBuffer = floatTo16BitPCM(channelData);
+                // 일부 브라우저/디바이스는 sampleRate 강제 설정을 무시하므로 실제 값을 사용
+                const actualSampleRate = inputBuffer.sampleRate || audioContext.sampleRate;
+                const downsampled = downsampleTo16k(channelData, actualSampleRate);
+                const pcmBuffer = floatTo16BitPCM(downsampled);
                 wsRef.current.send(pcmBuffer);
             };
 
@@ -172,6 +203,8 @@ export function useRealtimeStt(options?: UseRealtimeSttOptions) {
         connected,
         segments,
         error,
+        wsUrl,
+        sampleRate: actualSampleRate,
         start,
         stop,
     };
