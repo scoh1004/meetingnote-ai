@@ -8,7 +8,7 @@ import { useRealtimeStt } from '@/hooks/useRealtimeStt';
 export default function RealtimePage() {
     const [meetingTitle, setMeetingTitle] = useState('새 회의');
     const [language, setLanguage] = useState('ko');
-    const [sttProvider, setSttProvider] = useState('google');
+    const [sttProvider, setSttProvider] = useState('whisper');
     const [meetingId, setMeetingId] = useState<string | null>(null);
 
     const { connected, segments, error, wsUrl, sampleRate, start, stop } = useRealtimeStt({
@@ -71,6 +71,7 @@ export default function RealtimePage() {
                                 value={sttProvider}
                                 onChange={(e) => setSttProvider(e.target.value)}
                             >
+                                <option value='whisper'>Whisper</option>
                                 <option value='google'>Google</option>
                                 <option value='deepgram'>Deepgram</option>
                                 <option value='speechmatics'>Speechmatics</option>
