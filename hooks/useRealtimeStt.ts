@@ -17,7 +17,7 @@ type UseRealtimeSttOptions = {
     language?: string; // ko, en, ...
 };
 
-// 간단한 다운샘플링(모노) - ScriptProcessor 콜백에서 바로 사용
+// 간단한 다운샘플러(모노) - ScriptProcessor 콜백에서 바로 사용
 function downsampleTo16k(input: Float32Array, inputSampleRate: number) {
     const targetRate = 16000;
     if (inputSampleRate === targetRate) return input;
@@ -72,6 +72,9 @@ export function useRealtimeStt(options?: UseRealtimeSttOptions) {
         const finalProvider = providerCode ?? provider;
         const finalLang = lang ?? language;
 
+        // 이전 자원 정리
+        stop();
+
         try {
             // 1) WebSocket 연결
             const socketUrl = `${backendUrl}/ws/meetings/${meetingId}/realtime?provider=${finalProvider}&language=${finalLang}`;
@@ -121,12 +124,14 @@ export function useRealtimeStt(options?: UseRealtimeSttOptions) {
 
             wsRef.current = ws;
 
-            // 2) 마이크 권한 요청 + AudioContext 구성
+            // 2) 마이크 오디오만 캡처 후 AudioContext 구성
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     channelCount: 1,
                     echoCancellation: true,
                     noiseSuppression: true,
+                    autoGainControl: false,
+                    sampleRate: 48000, // 지원 시 48kHz로 캡처 후 16k로 다운샘플
                 },
             });
             mediaStreamRef.current = stream;
@@ -150,9 +155,8 @@ export function useRealtimeStt(options?: UseRealtimeSttOptions) {
                 }
                 const inputBuffer = audioProcessingEvent.inputBuffer;
                 const channelData = inputBuffer.getChannelData(0); // Float32Array
-                // 일부 브라우저/디바이스는 sampleRate 강제 설정을 무시하므로 실제 값을 사용
-                const actualSampleRate = inputBuffer.sampleRate || audioContext.sampleRate;
-                const downsampled = downsampleTo16k(channelData, actualSampleRate);
+                const actualRate = inputBuffer.sampleRate || audioContext.sampleRate;
+                const downsampled = downsampleTo16k(channelData, actualRate);
                 const pcmBuffer = floatTo16BitPCM(downsampled);
                 wsRef.current.send(pcmBuffer);
             };
@@ -163,7 +167,7 @@ export function useRealtimeStt(options?: UseRealtimeSttOptions) {
             console.error(err);
 
             const message =
-                err instanceof Error ? err.message : '실시간 연결 중 오류가 발생했습니다.';
+                err instanceof Error ? err.message : '음성 연결 중 오류가 발생했습니다.';
 
             setError(message);
             stop(); // 실패 시 정리
